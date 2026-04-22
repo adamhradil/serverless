@@ -1,0 +1,13 @@
+[project]
+name = "serverless"
+version = "0.1.0"
+description = "ETL Serverless benchmark"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyodbc",
+    "python-dotenv",
+    "pandas",
+    "urllib3",
+    "azure-monitor-opentelemetry"
+]

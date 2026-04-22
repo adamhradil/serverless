@@ -1,0 +1,13 @@
+.env
+*.auto.tfvars
+*.tfstate*
+*.pem
+.terraform/
+.terraform.lock.hcl
+.lock
+.terraform.tfstate.lock.info
+.terraform.tfstate
+__pycache__/
+*.py[cod]
+.venv/
+cold_start_*.json
