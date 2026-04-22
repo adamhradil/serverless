@@ -1,0 +1,87 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /tmp/.env
+    owner: root:root
+    permissions: '0600'
+    content: |
+      GOLEMIO_API_KEY=${GOLEMIO_API_KEY}
+      SQL_SERVER=${SQL_SERVER}
+      SQL_USER=${SQL_USER}
+      SQL_PASSWORD=${SQL_PASSWORD}
+      SQL_DATABASE=${SQL_DATABASE}
+      TABLE_NAME=VehiclePositions_IaaS
+      APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}
+      OTEL_SERVICE_NAME=iaas-benchmark
+
+  - path: /tmp/run_etl.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      echo "Logging into ACR..."
+      docker login ${ACR_LOGIN_SERVER} -u ${ACR_ADMIN_USERNAME} -p ${ACR_ADMIN_PASSWORD}
+      
+      echo "Pulling latest image..."
+      docker pull ${ACR_LOGIN_SERVER}/benchmark-etl:latest
+      
+      echo "Running ETL container..."
+      docker run --rm --env-file /home/azureuser/.env ${ACR_LOGIN_SERVER}/benchmark-etl:latest python /home/site/wwwroot/main.py
+
+  - path: /tmp/etl-benchmark.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=ETL Benchmark Run
+
+      [Service]
+      Type=oneshot
+      User=azureuser
+      ExecStart=/home/azureuser/run_etl.sh
+
+  - path: /tmp/etl-benchmark.timer
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=ETL Benchmark Timer
+
+      [Timer]
+      OnCalendar=*:*:00
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  # install Docker
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - |
+    sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+    Types: deb
+    URIs: https://download.docker.com/linux/ubuntu
+    Suites: $(. /etc/os-release && echo "$${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    Components: stable
+    Signed-By: /etc/apt/keyrings/docker.asc
+    EOF
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker azureuser
+
+  # fix ownership
+  - mv /tmp/.env /home/azureuser/.env
+  - mv /tmp/run_etl.sh /home/azureuser/run_etl.sh
+  - chown azureuser:azureuser /home/azureuser/.env /home/azureuser/run_etl.sh
+
+  # systemd timer
+  - mv /tmp/etl-benchmark.service /etc/systemd/system/etl-benchmark.service
+  - mv /tmp/etl-benchmark.timer /etc/systemd/system/etl-benchmark.timer
+  - systemctl daemon-reload
+  - systemctl enable --now etl-benchmark.timer
